@@ -500,6 +500,7 @@ function makeGuardedFetch(allowedHosts, { allowsLocalhost = false } = {}) {
         clearTimeout(timer);
       }
       if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
+        res.body?.cancel?.().catch(() => {});
         const next = new URL(res.headers.get('location'), current);
         hostOk(next); // re-validate the redirect target before following it
         await resolveAndValidate(next.hostname, { allowsLocalhost });

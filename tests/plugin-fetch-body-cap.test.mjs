@@ -45,6 +45,12 @@ before(async () => {
       const payload = gzipSync(JSON.stringify({ items: Array.from({ length: 2000 }, (_, i) => `row-${i}`) }));
       res.writeHead(200, { 'content-type': 'application/json', 'content-encoding': 'gzip', 'content-length': String(payload.length) });
       res.end(payload);
+    } else if (req.url === '/gzip-bomb') {
+      // 3 MB of 'a' compresses to ~3 KB on the wire: content-length passes a 1 MB
+      // cap, so only the decompressed TransformStream byte counter can stop it.
+      const payload = gzipSync(Buffer.alloc(3 * MB, 97));
+      res.writeHead(200, { 'content-type': 'text/plain', 'content-encoding': 'gzip', 'content-length': String(payload.length) });
+      res.end(payload);
     } else if (req.url === '/mid') {
       res.writeHead(200, { 'content-type': 'text/plain' });
       res.end(Buffer.alloc(3 * MB, 98));
@@ -77,6 +83,14 @@ test('a gzip-compressed response still decodes through the capped body', async (
   const c = ctx();
   assert.equal((await c.fetchJson(`${base}/gzip`)).items.length, 2000);
   assert.equal((await (await c.fetch(`${base}/gzip`)).json()).items[1999], 'row-1999');
+});
+
+test('a gzip response whose wire content-length is under the cap is still refused when its decompressed body exceeds maxBytes', async () => {
+  const c = ctx();
+  await assert.rejects(
+    c.fetchText(`${base}/gzip-bomb`, { maxBytes: 1 * MB }),
+    (e) => e.code === 'response_too_large' && !/content-length/.test(e.message),
+  );
 });
 
 test('a declared content-length over the cap is refused before the body is read', async () => {
