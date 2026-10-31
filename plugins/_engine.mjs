@@ -80,12 +80,14 @@ function bodyTooLarge(maxBytes, declared) {
  * @returns {Response}
  */
 function capResponseBody(res, maxBytes) {
+  // No body (HEAD, 204, 304): nothing to cap, and a HEAD's content-length describes
+  // the resource a GET would send, not bytes we would read.
+  if (!res.body) return res;
   const declared = Number(res.headers.get('content-length'));
   if (Number.isFinite(declared) && declared > maxBytes) {
-    res.body?.cancel?.().catch(() => {});
+    res.body.cancel?.().catch(() => {});
     throw bodyTooLarge(maxBytes, declared);
   }
-  if (!res.body) return res;
   let total = 0;
   const limiter = new TransformStream({
     transform(chunk, controller) {
@@ -94,7 +96,12 @@ function capResponseBody(res, maxBytes) {
       else controller.enqueue(chunk);
     },
   });
-  return new Response(res.body.pipeThrough(limiter), { status: res.status, statusText: res.statusText, headers: res.headers });
+  const capped = new Response(res.body.pipeThrough(limiter), { status: res.status, statusText: res.statusText, headers: res.headers });
+  // A new Response has no url: keep the original's, so a plugin resolving relative
+  // links against res.url keeps working.
+  Object.defineProperty(capped, 'url', { value: res.url, enumerable: true });
+  Object.defineProperty(capped, 'redirected', { value: res.redirected, enumerable: true });
+  return capped;
 }
 
 /** A caller's `maxBytes` when it is a positive finite number, else the default. */

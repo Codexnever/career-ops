@@ -51,6 +51,10 @@ before(async () => {
       const payload = gzipSync(Buffer.alloc(3 * MB, 97));
       res.writeHead(200, { 'content-type': 'text/plain', 'content-encoding': 'gzip', 'content-length': String(payload.length) });
       res.end(payload);
+    } else if (req.url === '/head-big') {
+      // A HEAD reply may advertise the size of the GET body without sending any.
+      res.writeHead(200, { 'content-length': String(50 * MB) });
+      res.end();
     } else if (req.url === '/mid') {
       res.writeHead(200, { 'content-type': 'text/plain' });
       res.end(Buffer.alloc(3 * MB, 98));
@@ -126,4 +130,15 @@ test('a bad maxBytes falls back to the default instead of disabling the cap', as
 
 test('an oversized error body keeps the HTTP status and loses only the snippet', async () => {
   await assert.rejects(ctx().fetchText(`${base}/error-big`), (e) => e.status === 500 && /^HTTP 500$/.test(e.message));
+});
+
+test('a HEAD response advertising a large content-length is not refused (it has no body)', async () => {
+  const res = await ctx().fetch(`${base}/head-big`, { method: 'HEAD' });
+  assert.equal(res.status, 200);
+});
+
+test('the capped response keeps the original url', async () => {
+  const res = await ctx().fetch(`${base}/small`);
+  assert.equal(res.url, `${base}/small`);
+  assert.equal(res.redirected, false);
 });
